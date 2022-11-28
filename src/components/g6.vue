@@ -327,7 +327,7 @@ export default {
 
           const loop = group.addShape('image', {
             attrs: {
-              img: `arrow${self.sample([1, 2, 3, 4, 5, 6])}.png`,
+              img: `arrows/${self.getRandom(0,72)}.png`,
               x: midPoint.x-size/2,
               y: midPoint.y-size/2,
               width: size,
@@ -347,7 +347,7 @@ export default {
             attrs: {
               text: loopText,
               // fill: cfg.style.stroke,
-              fill: 'black',
+              fill: self.sample(['black', 'red', 'blue']),
               textAlign: 'center',
               textBaseline: 'middle',
               fontSize: loopTextSize,
@@ -365,6 +365,8 @@ export default {
             ['t', -100,-50], // translate
             ['s',1,1],
           ]);
+          
+          
           // const loopMatrix = transform(matrix, [
           //   ['t', -100,-50], // translate
           //   ['s', 1, 1],
@@ -372,6 +374,7 @@ export default {
           // ]);
 
           symbol.setMatrix(symbolMatrix);
+          loop.setMatrix(symbolMatrix);
           // loop.setMatrix(loopMatrix);
           
 
