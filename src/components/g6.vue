@@ -1,16 +1,51 @@
+<!--  -->
 <template>
-  <main class="main"  @keydown.enterz="onPressSpace" >
-    <p v-if="currentGraph?.type">{{ currentGraph.type }}</p>
-    <div ref="canvas" class="wrapper" :style="{filter: `blur(${Math.random() > 0.8 ? sample([0.2, 0.3,0.4, 0.5,0.6]) : 0}px)`}"></div>
-  
-    <div style="z-index:4; position: absolute;left:10px;top:10px;">
+  <main class="main" ref="main">
+    <!-- <div style="z-index:4; position: absolute;left:10px;top:10px;"></div>   -->
+    <div v-if="(showDOMBboxes && graph)">
 
-      <button ref="saveButton"  @click="saveNGraphs">random</button>
+      <div :data-cls="renderNodes.find(rn=>rn.id == n.getContainer().id)?.cls" id="renderedNodes" v-for="n, i in graph.getNodes()" :class="['dom-node', 'renderedNode']" :style="{
+                    left: graph.getClientByPoint(p(n).x, p(n).y).x+'px',
+                    top: graph.getClientByPoint(p(n).x, p(n).y).y+'px',
+                    width: `${graph.getClientByPoint(p(n).maxX, p(n).maxY).x - 
+            graph.getClientByPoint(p(n).minX, p(n).minY).x}px`,
+            height: `${graph.getClientByPoint(p(n).maxX, p(n).maxY).y - 
+              graph.getClientByPoint(p(n).minX, p(n).minY).y}px`,
+        border: '0px solid transparent', color: 'transparent', background: 'transparent'
+      }">
+        
+        {{renderNodes.find(rn=>rn.id == n.getContainer().id)?.cls}}
+      </div>
+      
+      <div :data-id="e.getContainer().cfg.id" :data-cls="renderEdges.find( re => re.id == e.getContainer().cfg.id )?.cls" v-for="e, i in graph.getEdges()" :class="['dom-node', 'renderedEdge']" :style="{
+                        left: graph.getClientByPoint(b(e).x, b(e).y).x+'px',
+                        top: graph.getClientByPoint(b(e).x, b(e).y).y+'px',
+                        width: `${graph.getClientByPoint(b(e).maxX, b(e).maxY).x - 
+                graph.getClientByPoint(b(e).minX, b(e).minY).x}px`,
+                height: `${graph.getClientByPoint(b(e).maxX, b(e).maxY).y - 
+                  graph.getClientByPoint(b(e).minX, b(e).minY).y}px`,
+      border: '0px solid transparent',  color: 'transparent', background: 'transparent'}">
+    <!-- {{ e.getContainer().cfg.id }} -->
+    {{ renderEdges.find( re => re.id == e.getContainer().cfg.id )?.cls }}
+    <!-- {{e.getBBox()}} -->
+  </div>
+</div>
+
+    <div ref="canvas" class="wrapper" :style="{filter: `grayscale(${Math.random()>0.8? 1 : 0})`}"></div>
+    
+    <div  :style="{opacity: automation?0:1}" class="buttons-wrapper">
+      <button id="random" ref="saveButton"  @click="saveNGraphs">random</button>
       &nbsp;
       <button @click="showBboxes = !showBboxes; saveNGraphs()">{{showBboxes? 'hide' : 'show'}} bounding boxes</button>
+      {{ automation }}
     </div>
-    <!-- <pre v-if="currentbboxes" style="font-size: 12px;">{{ currentbboxes.join('\n').replaceAll(' ','\t')}}</pre> -->
-    <pre v-if="currentbboxes && showBboxes" style="font-size: 12px;">{{ bboxes}}</pre>
+    <!-- <div style="position: absolute; background-color: red; width: 100px; height: 100px">
+      {{domboxes[0]}}
+    </div> -->
+    <pre v-if="currentbboxes" :style="{'font-size': automation?'0px':'10px'}">{{ currentbboxes.join('\n').replaceAll(' ','\t')}}</pre>
+    <!-- <pre v-if="currentbboxes" style="font-size: 12px;">{{ normalNodes}}</pre> -->
+    <!-- <pre v-if="currentbboxes" style="font-size: 12px;">{{ loopEdges}}</pre> -->
+    <!-- <pre v-if="currentbboxes && showBboxes" style="font-size: 12px;">{{ bboxes}}</pre>-->
   </main>
 </template>
 
@@ -23,11 +58,40 @@ import { ext } from '@antv/matrix-util';
 import { timeout } from 'd3-timer';
 import debounce from "lodash.debounce"
 import { saveAs } from 'file-saver';
+import { isArray } from '@antv/util';
+import { calcCtrlPoints } from "bezier-control-points";
+// text inside loop symbols
+// 
+
+const getCircleCenterByPoints = (p1, p2, p3) => {
+  const a = p1.x - p2.x;
+  const b = p1.y - p2.y;
+  const c = p1.x - p3.x;
+  const d = p1.y - p3.y;
+  const e = (p1.x * p1.x - p2.x * p2.x - p2.y * p2.y + p1.y * p1.y) / 2;
+  const f = (p1.x * p1.x - p3.x * p3.x - p3.y * p3.y + p1.y * p1.y) / 2;
+  const denominator = b * c - a * d;
+  return {
+    x: -(d * e - b * f) / denominator,
+    y: -(a * f - c * e) / denominator,
+  };
+};
+
+const distance = (p1, p2) => {
+  const vx = p1.x - p2.x;
+  const vy = p1.y - p2.y;
+  return Math.sqrt(vx * vx + vy * vy);
+};
 
 export default {
   mixins: [generate],
   data() {  
     return {
+      renderNodes: [],
+      renderEdges: [],
+      loopEdges: [],
+      normalEdges: [],
+      normalNodes: [],
       polarities: [],
       p_leg: {
           '+': 's',
@@ -43,30 +107,34 @@ export default {
       renderCounter: 0,
       counter: 0,
       showBboxes: false,
-      canvasWidth: 1024,
-      canvasHeight: 1024,
+      showDOMBboxes: true,
+      canvasWidth: null,
+      canvasHeight: null,
+      csize: null,
       bboxes: [],
+      domboxes: [],
       currentbboxes: '',
+      automation: false,
       classes: {
-        variable: 1,
-        ne_arrow: 2, 
-        nw_arrow: 3,
-        se_arrow: 4,
-        sw_arrow: 5,
-        r_loop: 6,
-        b_loop: 7,
-        s: 8,
-        o: 9,
-        '+': 10,
-        '-': 11,
-        ne_arrow_s: 12,
-        nw_arrow_s: 13,
-        se_arrow_s: 14,
-        sw_arrow_s: 15,
-        ne_arrow_o: 16,
-        nw_arrow_o: 17,
-        se_arrow_o: 18,
-        sw_arrow_o: 19
+        variable: 0,
+        ne_arrow_s: 1,
+        nw_arrow_s: 2,
+        se_arrow_s: 3,
+        sw_arrow_s: 4,
+        ne_arrow_o: 5,
+        nw_arrow_o: 6,
+        se_arrow_o: 7,
+        sw_arrow_o: 8,
+        r_loop: 9,
+        b_loop: 10,
+        s: 11,
+        o: 12,
+        '+': 13,
+        '-': 14,
+        ne_arrow: 15, 
+        nw_arrow: 16,
+        se_arrow: 17,
+        sw_arrow: 18,
       },
       windowHeight: null,
       windowWidth: null,
@@ -79,12 +147,24 @@ export default {
   created() {
     window.addEventListener("resize", this.resizeHandler);
     window.addEventListener("keydown", this.onKeydown);
+
+    // check if query string automation is true without vue-router
+    
+    
   },
   destroyed() {
     window.removeEventListener("resize", this.resizeHandler);
     window.removeEventListener("keydown", this.onKeydown);
   },
-  mounted() {
+  mounted() {  
+    
+    this.automation = window.location.search.includes('automation=true')
+
+    // get nested canvas element from vue $ref
+    
+    
+    
+    
     var self=this;
     this.windowHeight = window.innerHeight;
     this.windowWidth = window.innerWidth;
@@ -176,6 +256,7 @@ export default {
           
           group.get('children')[0].attr({
             stroke: 'transparent',
+            fill: 'transparent',
             rx: width*0.8,
             ry: height*0.8,
           });
@@ -186,8 +267,9 @@ export default {
             attrs: {
               ...cfg.style,
               // stroke: 'transparent',
-              stroke: self.showBboxes ? 'aqua': 'transparent',
-              fill: 'transparent',
+              stroke: 'transparent',
+              fill: 'red',
+              opacity: self.showBboxes ? 0.1 : 0,
               x: -(labelBBox.width * scale)/2,
               y: -(labelBBox.height * scale)/2,
               width: labelBBox.width*scale,
@@ -196,8 +278,45 @@ export default {
             },
             draggable: true,
           });
+          let r = self.sample([self.getRandom(5, labelBBox.height * scale / 2), 0], [0.2, .8])
+          let c = self.sample([randomColor({ luminosity: 'dark' }), self.sample(['black', 'grey'])], [0.2, .8])
+          const rectShape = group.addShape('rect', {
+            attrs: {
+              // ...cfg.style,
+              // stroke: 'transparent',
+              stroke: c,
+              lineWidth: self.getRandom(0.2,4),
+              radius: [r,r],
+              fill: 'white',
+              x: -(labelBBox.width * scale)/2,
+              y: -(labelBBox.height * scale)/2,
+              width: labelBBox.width*scale,
+              height: labelBBox.height*scale
+              
+            },
+            draggable: true,
+          });
+
+          
+          // console.log(self.normalNodes);
+          // console.log(self.graph)
+          // console.log(group.getCanvasBBox())
+          
+          // push bbox
+          let b = keyShape.getBBox()
+          let clientBBox = {
+            x: self.graph.getClientByPoint(b.x, b.y).x,
+            y: self.graph.getClientByPoint(b.x, b.y).y,
+            maxX: self.graph.getClientByPoint(b.maxX, b.maxY).x,
+            maxY: self.graph.getClientByPoint(b.maxX, b.maxY).y,
+            minX: self.graph.getClientByPoint(b.minX, b.minY).x,
+            minY: self.graph.getClientByPoint(b.minX, b.minY).y
+          }
+
+          self.normalNodes.push({id: cfg.id, bbox: clientBBox, type: 'normalNode' })
           
           keyShape.toFront()
+          rectShape.toBack()
           // console.log('pushing variable', cfg.id);
           
 
@@ -205,6 +324,91 @@ export default {
       },
 
       'ellipse',
+    );
+
+    G6.registerNode( // rect
+      'rect',
+      {
+        // draw(cfg, group) {
+        //   console.log(cfg.x);
+        //   // self.getCoords(cfg.x, cfg.y, cfg.size[0], cfg.size[1])
+        // },
+        afterDraw(cfg, group) {
+          const size = this.getSize(cfg); // translate to [width, height]
+          const width = size[0];
+          const height = size[1];
+          const scale = 0.8
+
+          group.get('children')[0].attr({
+            stroke: 'transparent',
+            rx: width * 0.8,
+            ry: height * 0.8,
+          });
+
+          const labelBBox = group.getBBox();
+
+          const keyShape2 = group.addShape('rect', {
+            attrs: {
+              ...cfg.style,
+              stroke: cfg.style.stroke,
+              //stroke width
+              lineWidth: cfg.style.lineWidth,
+              // stroke: 'transparent',
+              fill: 'transparent',
+              // opacity: self.showBboxes ? 0.1 : 0,
+              x: -(labelBBox.width * scale) / 2,
+              y: -(labelBBox.height * scale) / 2,
+              width: labelBBox.width * scale,
+              height: labelBBox.height * scale
+
+            },
+            draggable: true,
+          });
+
+          const keyShape = group.addShape('rect', {
+            attrs: {
+              ...cfg.style,
+              // stroke: 'transparent',
+              stroke: 'blue',
+              fill: 'red',
+              opacity: self.showBboxes ? 0.1 : 0,
+              x: -(labelBBox.width * scale) / 2,
+              y: -(labelBBox.height * scale) / 2,
+              width: labelBBox.width * scale,
+              height: labelBBox.height * scale
+
+            },
+            draggable: true,
+          });
+
+
+          // console.log(self.normalNodes);
+          // console.log(self.graph)
+          // console.log(group.getCanvasBBox())
+
+          // push bbox
+          let b = keyShape.getBBox()
+          let clientBBox = {
+            x: self.graph.getClientByPoint(b.x, b.y).x,
+            y: self.graph.getClientByPoint(b.x, b.y).y,
+            maxX: self.graph.getClientByPoint(b.maxX, b.maxY).x,
+            maxY: self.graph.getClientByPoint(b.maxX, b.maxY).y,
+            minX: self.graph.getClientByPoint(b.minX, b.minY).x,
+            minY: self.graph.getClientByPoint(b.minX, b.minY).y
+          }
+
+          self.normalNodes.push({ id: cfg.id, bbox: clientBBox, type: 'normalNode' })
+
+          keyShape.toFront()
+          keyShape2.toFront()
+
+          // console.log('pushing variable', cfg.id);
+
+
+        },
+      },
+
+      'rect',
     );
 
     G6.registerNode( // ellipse-padded
@@ -227,9 +431,10 @@ export default {
           const keyShape = group.addShape('ellipse', {
             attrs: {
               ...cfg.style,
+              stroke: randomColor({luminosity: 'dark'}),
               // fill: 'transparent',
-              ry: height*0.4,
-              rx: width*0.4,
+              ry: height*0.5,
+              rx: width*0.5,
             },
             draggable: true,
           });
@@ -243,8 +448,9 @@ export default {
             attrs: {
               ...cfg.style,
               // stroke: 'transparent',
-              stroke: self.showBboxes ? 'aqua' : 'transparent',
-              fill: 'transparent',
+              stroke: 'transparent',
+              fill: self.showBboxes ? 'red' : 'transparent',
+              opacity: 0.1,
               x: -(labelBBox.width) / 2,
               y: -(labelBBox.height) / 2,
               width: labelBBox.width,
@@ -254,6 +460,8 @@ export default {
             draggable: true,
           });
 
+          // push bbox
+          self.normalNodes.push({ id: cfg.id, bbox: keyShape.getBBox(), type: 'normalNode' })
         
           keyShape.toBack()
           bbox.toFront()
@@ -264,33 +472,80 @@ export default {
       // Extend the 'single-node'
       'ellipse',
     );
-
  
     G6.registerEdge( // loopEdge
       'loopEdge', {
+        // clockwise: self.sample([0,1]),
+        // curveOffset: 20,
+        // getControlPoints(cfg) {
+          
+        // },
+        // getPath(points) {
+        //   const path = [];
+        //   path.push(['M', points[0].x, points[0].y]);
+        //   if (points.length === 2) {
+        //     path.push(['L', points[1].x, points[1].y]);
+        //   } else {
+        //     path.push([
+        //       'A',
+        //       points[1].x,
+        //       points[1].y,
+        //       0,
+        //       0,
+        //       this.clockwise,
+        //       points[2].x,
+        //       points[2].y,
+        //     ]);
+        //   }
+        //   return path;
+        // },
+        // curveOffset: 1000,
       options: {
         style: {
+          
           stroke: '#000',
         },
       },
       labelAutoRotate: true,
+      draw(cfg, group) { 
+        // draw a quadratic bezier curve
+        const startPoint = cfg.startPoint;
+        const endPoint = cfg.endPoint;
+        // derrive midPoint at 0.5 of the line
+        const midPoint = {
+          x: (startPoint.x + endPoint.x) / 2,
+          y: (startPoint.y + endPoint.y) / 2,
+        };
+        // Find a point at a given perpendicular distance from the midPoint on the line.
+        // offset is proportional to line length
+        const lineLength = Math.sqrt(Math.pow(startPoint.x - endPoint.x, 2) + Math.pow(startPoint.y - endPoint.y, 2));
+        let offset = self.remapValue(lineLength, 100, 200, 0, 50) * self.sample([1, 1])
+        let controlPoint = self.getOffsetPoint(midPoint, endPoint, offset)
+        const path = [
+          ['M', startPoint.x, startPoint.y],
+          ['Q', controlPoint.x, controlPoint.y, endPoint.x, endPoint.y],
+        ];
+        const shape = group.addShape('path', {
+          attrs: {
+            ...cfg.style,
+            path,
+          },
+          name: 'path-shape',
+        });
+        return shape;
+      },
       afterDraw(cfg, group) {
         const shape = group.get('children')[0];
         // change shape
-        const endPoint = shape.getPoint(0.9);
-        const midPoint = shape.getPoint(0.5);
         const startPoint = shape.getPoint(0);
-
-        // draw line at angle of bearing
+        const midPoint = shape.getPoint(0.5);
+        const endPoint = shape.getPoint(0.9);
+        const length = shape.cfg.totalLength
 
         const p = self.sample(['+', '–', '-', 's', 'p', 'o', 'S', 'P', 'O'])
-
         
-        
-        // get id
         self.polarities.push({id: cfg.id, polarity: self.p_leg[p]})
 
-        const length = shape.cfg.totalLength
         let radian = Math.atan((startPoint.y - endPoint.y) / ((startPoint.x - endPoint.x)));
         if (length < 100) {
           // set attribute
@@ -308,14 +563,17 @@ export default {
         } else {
 
           if (self.showBboxes) {
+            // add new group
+
             group.addShape('text', {
               attrs: {
                 text: self.getBearing(startPoint, endPoint),
                 fill: 'red',
+                opacity: 0.6,
                 textAlign: 'start',
                 textBaseline: 'middle',
-                fontVariant: 'bold',
-                fontSize: 28,
+                fontVariant: 'normal',
+                fontSize: 20,
                 x: endPoint.x,
                 y: endPoint.y,
               },
@@ -323,6 +581,8 @@ export default {
             });
 
           }
+          let arrowWidth = self.getRandom(5, 10);
+          let arrowLength = arrowWidth * self.getRandom(1, 3)
 
           shape.attr({
 
@@ -330,8 +590,8 @@ export default {
               fillOpacity: Math.random() > 0.9 ? 0.5 : 1,
               fill: cfg.style.stroke,
               path: self.sample([
-                G6.Arrow.triangle(self.getRandom(5, 8), self.getRandom(10, 20), 0),
-                G6.Arrow.vee(self.getRandom(5, 15), self.getRandom(2, 20), 0),
+                G6.Arrow.triangle(arrowWidth, arrowLength),
+                // G6.Arrow.vee(self.getRandom(5, 15), self.getRandom(2, 20), 0),
                 // G6.Arrow.circle(this.getRandom(2, 6), 0)
               ])
             }]),
@@ -345,8 +605,8 @@ export default {
               fill: cfg.style.stroke,
               textAlign: 'start',
               textBaseline: 'middle',
-              fontVariant: 'bold',
-              fontSize: cfg.style.fontSize,
+              fontVariant: self.sample(['bold', 'normal'], [0.7,0.3]),
+              fontSize: self.sample([10,15,20]),
               x: endPoint.x - self.sample([20, -20]) * Math.cos(radian + Math.PI / 2),
               y: endPoint.y - self.sample([20, -20]) * Math.sin(radian + Math.PI / 2),
             },
@@ -361,7 +621,7 @@ export default {
           ]);
           polarity.setMatrix(polarityMatrix);
 
-          if (Math.random() > 0.9) {
+          if (Math.random() > 0.8) {
 
             const delay = group.addShape('text', {
               attrs: {
@@ -386,21 +646,27 @@ export default {
           
 
           let { maxX, maxY, minX, minY } = group.getBBox()
+          
+          group.addShape('rect', {
+            attrs: {
+              x: minX,
+              y: minY,
+              width: maxX - minX,
+              height: maxY - minY,
+              fill: self.showBboxes ? 'red' : 'transparent',
+              opacity: self.showBboxes ? 0.1: 0,
+              stroke: 'transparent',
+            },
+            draggable: false,
+            name: 'bbox-polarity-shape',
+          });
+          
 
-          if (self.showBboxes) {
-            const bbox = group.addShape('rect', {
-              attrs: {
-                x: minX,
-                y: minY,
-                width: maxX - minX,
-                height: maxY - minY,
+          
 
-                stroke: 'red',
-                lineWidth: 3,
-              },
-              name: 'bbox-shape',
-            });
-          }
+          // push bbox
+          self.normalEdges.push({id: cfg.id, bbox: polarity.getBBox(), type: 'normalEdge' })
+          
 
 
         }
@@ -420,29 +686,55 @@ export default {
 
           // the init matrix for a shape or a group is null, initiate it with unit matrix
 
+          let bracket = Math.random() > 0.8
 
+          let n = self.getRandom(1, 38)
+            const loop = group.addShape('image', {
+              attrs: {
+                img: bracket ? 'blank.png' : `arrows/${self.sample(['a', 'b'])}/${n}.png`,
+                opacity: bracket ? 0 : 1,
+                x: midPoint.x - size / 2,
+                y: midPoint.y - size / 2,
+                width: size,
+                height: size,
+              },
+              name: 'loop-image',
+            });
+            
+          
+          // push bbox
+          self.loopEdges.push({id: cfg.id, image: `arrows/${n}.png`, bbox: group.getBBox(), type: 'loopEdge' })
+          
 
+          let bracketStart = bracket ?  '(' : ''
+          let bracketEnd = bracket ?  ')' : ''
 
-          const loop = group.addShape('image', {
-            attrs: {
-              img: `arrows/${self.getRandom(1, 72)}.png`,
-              x: midPoint.x - size / 2,
-              y: midPoint.y - size / 2,
-              width: size,
-              height: size,
-            },
-            name: 'loop-image',
-          });
-
-
-
-
-
-          let loopText = self.sample([self.sample(['–', '—', '-']), '+', self.sample(['R', 'B']) + self.sample([self.getRandom(1, 20)])])
+          let loopText = bracketStart + self.sample([self.sample(['–', '—', '-']), '+', self.sample(['R', 'B']) + self.sample([self.getRandom(1, 20)])]) + bracketEnd
+          
+          if (loopText.length<=5){
+            var loopTextSize = loopText.startsWith('R') || loopText.startsWith('B') ? 18 : 30
+          } else{
+            var loopTextSize = 10
+          }
           // check if loopText starts with R or B
-          let loopTextSize = loopText.startsWith('R') || loopText.startsWith('B') ? 18 : 30
           let loopFontWeight = loopText.startsWith('R') || loopText.startsWith('B') ? 400 : 200
 
+          
+          // const symbolCaption = group.addShape('text', {
+          //   attrs: {
+          //     text: `${self.randomWords(2)}\n${self.randomWords(2)}`,
+          //     // fill: cfg.style.stroke,
+          //     fill: self.sample(['black', 'red', 'blue']),
+          //     textAlign: 'center',
+          //     textBaseline: 'middle',
+          //     fontSize: random(8, 60),
+          //     fontWeight: loopFontWeight,
+          //     x: midPoint.x,
+          //     y: midPoint.y //- (size / 2),
+          //   },
+          //   name: 'loop-text-caption',
+          // })
+          
           // if cfg.labelCfg.text includes a "p"
           const symbol = group.addShape('text', {
             attrs: {
@@ -458,6 +750,22 @@ export default {
             },
             name: 'loop-text',
           })
+
+          group.addShape('text', {
+            attrs: {
+              text: self.sample([`${self.randomWords(2)}\n${self.randomWords(2)}`, '']),
+              // fill: cfg.style.stroke,
+              fill: self.sample(['black', 'red', 'blue']),
+              textAlign: 'center',
+              textBaseline: 'middle',
+              fontSize: 15,
+              fontWeight: loopFontWeight,
+              x: midPoint.x-100,
+              y: midPoint.y
+            },
+            name: 'loop-text',
+          })
+          
 
           let matrix = loop.getMatrix();
           if (!matrix) matrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -491,12 +799,15 @@ export default {
                 height: maxY - minY,
                 stroke: 'red',
                 lineWidth: 1,
-              }
+              },
+              name: 'loop-shape',
             })
           }
 
           // loop.setMatrix(loopMatrix);
 
+
+        } else{
 
         }
 
@@ -510,23 +821,75 @@ export default {
     }, 'quadratic'
     )
 
-    // this.graphs = this.generateRandomGraphs(1)
-    // this.graphs = this.graphs.map(g=>
-    //   this.styleGraph(g)
-    // )
-
   },
   methods: {
 
+    getOffsetPoint(midPoint, endPoint, offset) {
+      let x1 = midPoint.x
+      let y1 = midPoint.y
+      let x2 = endPoint.x
+      let y2 = endPoint.y
+      let N = offset
+
+      var dx = x1 - x2
+      var dy = y1 - y2
+      let dist = Math.sqrt(dx * dx + dy * dy)
+      dx = dx/dist
+      dy = dy/dist
+
+      let x3 = x1 + N * dy
+      let y3 = y1 - N * dx
+      let x4 = x1 - N * dy
+      let y4 = y1 + N * dx
+      // console.log([x4, y4])
+      return {x: x3, y: y3}
+    },
+
+    p(n){
+      return n.getBBox()
+    },
+
+    b(e){
+      return e.getContainer().getBBox()
+    },
 
     saveToTextFile(padded_counter){
       // write bboxes to a csv file
-      var blob = new Blob([this.bboxes.join('\n')], { type: "text/plain;charset=utf-8" });
+      var blob = new Blob([this.currentbboxes.join('\n')], { type: "text/plain;charset=utf-8" });
       
       saveAs(blob, `${padded_counter}.txt`);
 
     },  
 
+    getArcControlPoints(curveOffset, startPoint, midPoint, endPoint){
+      const vec = {
+        x: endPoint.x - startPoint.x,
+        y: endPoint.y - startPoint.y,
+      };
+      
+      const edgeAngle = Math.atan2(vec.y, vec.x);
+
+      let arcPoint = {
+        x: curveOffset * Math.cos(-Math.PI / 2 + edgeAngle) + midPoint.x,
+        y: curveOffset * Math.sin(-Math.PI / 2 + edgeAngle) + midPoint.y,
+      };
+
+      let pointsToPassThrough = [
+        [startPoint.x, startPoint.y],
+        [arcPoint.x, arcPoint.y],
+        [endPoint.x, endPoint.y]
+      ];
+
+      return calcCtrlPoints(pointsToPassThrough).map((point) => {
+        return {
+          x: point[0],
+          y: point[1],
+        }
+      })
+
+      
+
+    },
   
     getBearing(startPoint, endPoint) {
       // if endPoint x is greater than startPoint x, then it's east
@@ -542,39 +905,69 @@ export default {
       return quadrant
     },
 
-    getCoords(x,y,width,height){
-      console.log(x,y,width,height);
-      
-
-    },
-
-    pushBBox(c, x, y, width, height){     
-      
+    
+    pushBBox(bbox, c){     
+      var { x, y, minX, maxX, minY, maxY, width, height } = bbox
       let cls = this.classes[c]
-      
       var centerX = (x + width / 2) / this.canvasWidth; 
       var centerY = (y + height / 2) / this.canvasHeight;
       
-      var width = width / this.canvasWidth
-      var height = height / this.canvasHeight
-
-      this.bboxes.push(`${cls} ${x} ${y} ${width} ${height}`)
-      this.currentbboxes.push(`${c} ${x} ${y} ${width} ${height}`)     
+      width = width / this.canvasWidth
+      height = height / this.canvasHeight
+      
+      // this.domboxes.push(
+      //   {
+      //     left: this.graph.getClientByPoint(x, y).x + 'px',
+      //     top: this.graph.getClientByPoint(x, y).y + 'px',
+      //     width: `${this.graph.getClientByPoint(maxX, maxY).x -
+      //       this.graph.getClientByPoint(minX, minY).x}px`,
+      //     height: `${this.graph.getClientByPoint(maxX, maxY).y -
+      //       this.graph.getClientByPoint(minX, minY).y}px`,
+      //     // height: n.getBBox().height+'px',
+      //   })
+      
+      this.bboxes.push(`${c} ${centerX} ${centerY} ${width} ${height}`)
+      this.currentbboxes.push(`${c} ${centerX} ${centerY} ${width} ${height}`)     
       
     },
 
     onKeydown(event) {
-      if (event.code === "Space") {
+      if (event.code === "Enter") {
+        this.domboxes = []
         this.$refs.saveButton.click()
         
       }
     },
     saveNGraphs(){
+      this.csize = this.sample([1600/2, 1280/2, 800/2], [0.6, 0.2, 0.2])
+      this.canvasWidth = this.csize
+      this.canvasHeight = this.csize
       this.counter +=1
       this.currentbboxes = []
       let g = this.generateRandomGraphs(1)
       let p = this.styleGraph(g[0])
       this.drawGraph(p, this.causalLoopStyle(), this.counter)
+      
+      // const cv = this.$refs.canvas.getElementsByTagName('canvas')[0]
+      // // set the canvas width and height to the graph width and height
+      // cv.style.transformOrigin = 'top left'
+      // // cv.style.transform = `scale(${640/this.csize})`
+      // // resize canvas to enlarge pixels to 640x640
+      // cv.width = this.csize
+      // cv.height = this.csize
+      // cv.style.transformOrigin = 'top left'
+      // cv.style.width = `${this.csize}px`
+      // cv.style.height = `${this.csize}px`
+      // cv.style.transform = `scale(${640/this.csize})`
+      
+
+
+    
+
+    },
+
+    remapValue(value, low1, high1, low2, high2) {
+      return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
     },
     
     styleGraph(g) {
@@ -586,7 +979,8 @@ export default {
           return {
             ...n,
             id: n.key,
-            label: Math.random() > 0.8 ? `${this.randomWords(2)}\n${this.randomWords(2)}`.toUpperCase() : `${this.randomWords(2)}\n${this.randomWords(2)}`,
+            label: this.sample([`${this.randomWords(2)}\n${this.randomWords(2)}`.toUpperCase(),
+                                `${this.randomWords(2)}\n${this.randomWords(2)}`], [0.5,0.5])
             // comboId: this.sample(['a', 'b'])
           }
         }),
@@ -638,14 +1032,13 @@ export default {
         this.graph = new G6.Graph({
           animation: false,
           container: this.$refs.canvas,
-          width: 640,
-          height: 640,
+          width: this.canvasWidth,
+          height: this.canvasHeight,
           fitCenter: true,
           fitView: true,
           fitViewPadding: 20,
-
-          gpuEnabled: true,
-          preventOverlap: {padding: 20},
+          // gpuEnabled: true,
+          // preventOverlap: {padding: 20},
           modes: {
             default: ['drag-canvas'  , 'zoom-canvas', 'drag-node'],
           },
@@ -662,88 +1055,161 @@ export default {
 
       this.graph.updateLayout({
                 
-        
+        // maxIteration: 50,
         type: 'forceAtlas2',
+        width: this.canvasWidth, 
+        height: this.canvasHeight,
         onLayoutEnd: (e) => {
           // workaround strange double render issue
+          
           if (this.renderCounter == 1) {
-              
-              this.pushNodeBBoxes()
-              this.pushEdgeBBoxes()
-              setTimeout(() => {
-                let padded_counter = this.counter.toString().padStart(6, '0')
+            this.pushNodeBBoxes()
+            this.pushEdgeBBoxes()
+            
+            setTimeout(() => {
+              let padded_counter = this.counter.toString().padStart(6, '0')  
+              let renderedNodes = document.getElementsByClassName('renderedNode');
+              let renderedEdges = document.getElementsByClassName('renderedEdge');
+              Array.from(renderedEdges).map(re=> {
                 
-                // uncomment to save:
-                // this.graph.downloadImage(`${padded_counter}`, 'image/jpeg', 'white')
-                // this.saveToTextFile(padded_counter)
 
-              }, 300);
+              })
+              
+              // console.log(`${this.getBearing(re.e.getModel().startPoint, re.e.getModel().endPoint)}_arrow_${polarity}`)
+
+              Array.from(renderedNodes).filter(rn=>rn.innerText).map(rn => this.pushBBox(rn.getBoundingClientRect(), 1))
+              
+              Array.from(renderedEdges).filter(rn => rn.innerText).map(re => {
+                var self = this
+                let pol = this.p_leg[this.graph.getEdges().find(e => e.getContainer().cfg.id == re.attributes['data-id'].value).getContainer().findAll(function (item) {
+                  return item.attr('text') // get all the elements with the id smaller than 10
+                })[0].attr('text')]
+                console.log();
+                
+                let classname = `${re.attributes['data-cls'].value.slice(0, 2)}_arrow_${pol}`
+                let classcat = this.classes[`${re.attributes['data-cls'].value.slice(0, 2)}_arrow_${pol}`]
+
+                this.pushBBox(re.getBoundingClientRect(), classcat)
+              })
+              // uncomment to save:
+              // this.graph.downloadImage(`${padded_counter}`, 'image/jpeg', 'white')
+              // this.saveToTextFile(padded_counter)
+
+            }, 10);
+            
+            
             this.renderCounter = 0
           } else{
             this.renderCounter += 1
           }
           
+          // get the node divs by classname renderedNodes
+          // for (let n of renderedNodes){
+          //   console.log(n.getBoundingClientRect())
+          // }
+          
+          // get the dom bounding boxes of each node in renderedNodes
+          
+
         },
         fitView: true,
         linkDistance: this.getRandom(100,300),
         preventOverlap: true,
       })
-
       
       
-
+      
+      
+      this.normalNodes = []
+      this.bboxes = []
+      this.dombboxes = []
+      this.loopEdges = []
+      this.normalEdges = []
       this.graph.render();
-      // let nodes = this.graph.getNodes()
-      // deduplicate nodes
-      // let dedupedNodes = nodes.filter((v,i,a)=>a.findIndex(t=>(t._cfg.id === v._cfg.id))===i)
-      
-      
-      
+
+    },
+
+    getCls(e){
+      let polarity = this.polarities.find(p => p.id == e.getContainer().cfg.id).polarity
+      let cls = `${this.getBearing(e.getModel().startPoint, e.getModel().endPoint)}_arrow_${polarity}`
+      return cls
     },
 
     pushEdgeBBoxes(){
       let edges = this.graph.getEdges()
-      edges.forEach((e) => {
-        const {x, y, minX, maxX, minY, maxY} = e.getContainer().getBBox()
-        const width = (maxX - minX) / this.canvasWidth
-        const height = (maxY - minY) / this.canvasHeight
-        const centerX = (x + width / 2) / this.canvasWidth;
-        const centerY = (y + height / 2) / this.canvasHeight;
-        
-        let m = e.getModel()
-        
 
-        // find polarity by id
-        let polarity = this.polarities.find(p => p.id == m.id).polarity
+      
+      
+      edges.forEach((e) => {
+        var nedges = this.normalEdges.filter(c => c.id == e.getContainer().cfg.id)
+        var ledges = this.loopEdges.filter(c => c.id == e.getContainer().cfg.id)
         
+        let polarity = this.polarities.find(p => p.id == e.getContainer().cfg.id).polarity
+        let cls = `${this.getBearing(e.getModel().startPoint, e.getModel().endPoint)}_arrow_${polarity}`
+      
         
-        let cls = `${this.getBearing(m.startPoint, m.endPoint)}_arrow_${polarity}`
-        if ((centerX != 0) && (polarity != undefined)){
-          this.pushBBox(cls, centerX, centerY, width, height)
-        } else{
-          // console.log('zero')
+        if (nedges.length){
+          
+          if (e.getKeyShape().cfg.totalLength > 100) {
+            this.renderEdges.push({
+              e: nedges[0],
+              cls: cls,
+              id: nedges[0].id,
+            })
+
+          }
+        }
+        
+        if (ledges.length){
+          if (e.getKeyShape().cfg.totalLength > 100) {
+            this.renderEdges.push({
+              e: ledges[0],
+              cls: cls,
+              id: nedges[0].id,
+            })
+
+          }
         }
 
-      })    
+        if ((nedges.length || ledges.length) && e.getKeyShape().cfg.totalLength){
+          
+        }
+      })
     },
+
 
     pushNodeBBoxes(){
       
       let nodes = this.graph.getNodes()
-      for (let n of nodes) {
-        let {width, height} = n.getContainer().getBBox()
-        let { x, y } = n.getModel()
-        let centerX = (x + (n.getModel().size[0] / 2)) / this.canvasWidth
-        let centerY = (y + (n.getModel().size[1] / 2)) / this.canvasHeight
-        this.pushBBox('variable', centerX, centerY, width, height)
-        
+      
+      for (let n of nodes){
+        var nnode = this.normalNodes.filter(c => c.id == n.getContainer().cfg.id)       
+        let b = n.getBBox()
+
+
+        this.renderNodes.push({
+          n: nnode,
+          cls: 'variable',
+          id: n.getContainer().id
+        })
+
       }
       
     },
 
+    sample(arr, probabilities){
+      if (!probabilities || probabilities?.length != arr.length) {
+        return arr[Math.floor(Math.random() * arr.length)]
+      } else{
+        let total = probabilities.reduce((a,b) => a+b)
+        let rand = Math.random() * total
+        let sum = 0
+        for (let i = 0; i < arr.length; i++){
+          sum += probabilities[i]
+          if (rand < sum) return arr[i]
+        }
 
-    sample(arr){
-      return arr[Math.floor(Math.random() * arr.length)]
+      }
     },
 
     resizeHandler() {
@@ -770,7 +1236,9 @@ export default {
           ...this.sample([
             { type: 'ellipse-padded', size: [150, 75]},
             { type: 'ellipse-rect', size: [120, 45]},          
-          ]),
+            // { type: 'rect', size: [120, 45]},          
+            // { type: 'rect', size: [120, 45]},          
+          ], [.5,0]),
           
           //'rect', 'circle'
           
@@ -778,11 +1246,11 @@ export default {
             position: 'center',
             fontSize: self.sample([12, 16]),
             style: {
-              fontSize: self.sample([12, 16]),
+              fontSize: this.getRandom(12, 16),
               fill: textFill,
-              fontFamily: this.sample(['Arial', 'serif']),
+              fontFamily: this.sample(['Arial', 'Courier', 'Times New Roman','Consolas']),
               background: {
-                // padding: [20, 20, 20, 20],
+                padding: [20, 20, 20, 20],
               },
             },
           },
@@ -791,15 +1259,16 @@ export default {
             // fillOpacity: this.sample([true, false]) ? 0 : 1,
             strokeOpacity: this.sample([true,false])?0:1,
             stroke: nodeStroke,
-            lineWidth: Math.random() > 0.9 ? 1 : 3,
+            lineWidth: Math.random() > 0.9 ? 1 : self.sample([0.5,0.2,2]),
           },
         },
         defaultEdge: {
           // type: this.sample(['line', 'quadratic', 'mid-point-edge', 'polarityEdge']),
           // type: this.sample(['polarityEdge']),
           type: 'loopEdge',
-          curveOffset: Math.random() > 0.9 ? 0 : this.getRandom(20, 60),
-          curvePosition: 0.5,
+          // curveOffset: this.sample([this.getRandom(-80, 80), 0], [0.8,0.2]),
+          // curvePosition: 0.5,
+          // controlPoints: [{ x: '+10', y: '-20' }],
           hidden: false,
           style: {
             stroke: edgeStroke,
@@ -849,15 +1318,20 @@ export default {
 
 
 <style scoped>
+.wrapper{
+  /* height: 640px !important;
+  height: 640px !important;
+  max-height: 640px !important;
+  max-height: 640px !important; */
 
-header {
-  line-height: 1.5;
+  image-rendering: pixelated;
 }
 
-.wrapper{
-  border: 1px solid black;
-  max-width: 1024px;
-  max-height: 1024px;
+.dom-node {
+  position: absolute;
+  z-index: 100;
+  border: 1px solid red;
+  pointer-events: none !important;
 }
 
 .main{
@@ -865,22 +1339,15 @@ header {
   align-items: flex-start;
   justify-content: flex-start;
   flex-direction: column;
-  margin: 0;
-  padding: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100vw;
   height: 100vh;
 }
-
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
+.buttons-wrapper{
+  z-index: 4;
+  position: absolute;
+  left: 10px;
+  top: 10px;
 }
 </style>

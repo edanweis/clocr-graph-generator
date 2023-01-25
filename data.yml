@@ -1,0 +1,5 @@
+train: ../train/images
+val: ../valid/images
+
+nc: 19
+names: ['variable': 1, 'ne_arrow': 2,  'nw_arrow': 3, 'se_arrow': 4, 'sw_arrow': 5, 'r_loop': 6, 'b_loop': 7, 's': 8, 'o': 9, '+': 10, '-': 11, 'ne_arrow_s': 12, 'nw_arrow_s': 13, 'se_arrow_s': 14, 'sw_arrow_s': 15, 'ne_arrow_o': 16, 'nw_arrow_o': 17, 'se_arrow_o': 18, 'sw_arrow_o': 19 ]

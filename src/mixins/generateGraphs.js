@@ -21,9 +21,9 @@ const generate = {
                 min_edges: 10,
                 max_edges: 100,
                 graphTypes: [
-                    // { name: 'complete', func: complete },
                     { name: 'path', func: path },
                     { name: 'ladder', func: ladder },
+                    // { name: 'complete', func: complete },
                     // { name: 'erdosRenyi', func: erdosRenyi },
                     // { name: 'caveman', func: caveman },
                     // { name: 'connectedCaveman', func: connectedCaveman },

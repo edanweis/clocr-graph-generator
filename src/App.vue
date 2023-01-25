@@ -42,6 +42,8 @@ export default {
 html, body, #app{
   margin: 0 !important;
   padding: 0 !important;
+  width: 100vw;
+  height: 100vh;
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
