@@ -37,7 +37,7 @@
       <button id="random" ref="saveButton"  @click="saveNGraphs">random</button>
       &nbsp;
       <button @click="showBboxes = !showBboxes; saveNGraphs()">{{showBboxes? 'hide' : 'show'}} bounding boxes</button>
-      {{ automation }}
+      {{ graphType }}
     </div>
     <!-- <div style="position: absolute; background-color: red; width: 100px; height: 100px">
       {{domboxes[0]}}
@@ -88,6 +88,7 @@ export default {
   data() {  
     return {
       renderNodes: [],
+      graphType: null,
       renderEdges: [],
       loopEdges: [],
       normalEdges: [],
@@ -157,6 +158,8 @@ export default {
     window.removeEventListener("keydown", this.onKeydown);
   },
   mounted() {  
+
+    
     
     this.automation = window.location.search.includes('automation=true')
 
@@ -431,8 +434,9 @@ export default {
           const keyShape = group.addShape('ellipse', {
             attrs: {
               ...cfg.style,
-              stroke: randomColor({luminosity: 'dark'}),
-              // fill: 'transparent',
+              // stroke: randomColor({luminosity: 'dark'}),
+              stroke: 'transparent',
+              fill: 'transparent',
               ry: height*0.5,
               rx: width*0.5,
             },
@@ -475,31 +479,6 @@ export default {
  
     G6.registerEdge( // loopEdge
       'loopEdge', {
-        // clockwise: self.sample([0,1]),
-        // curveOffset: 20,
-        // getControlPoints(cfg) {
-          
-        // },
-        // getPath(points) {
-        //   const path = [];
-        //   path.push(['M', points[0].x, points[0].y]);
-        //   if (points.length === 2) {
-        //     path.push(['L', points[1].x, points[1].y]);
-        //   } else {
-        //     path.push([
-        //       'A',
-        //       points[1].x,
-        //       points[1].y,
-        //       0,
-        //       0,
-        //       this.clockwise,
-        //       points[2].x,
-        //       points[2].y,
-        //     ]);
-        //   }
-        //   return path;
-        // },
-        // curveOffset: 1000,
       options: {
         style: {
           
@@ -519,7 +498,16 @@ export default {
         // Find a point at a given perpendicular distance from the midPoint on the line.
         // offset is proportional to line length
         const lineLength = Math.sqrt(Math.pow(startPoint.x - endPoint.x, 2) + Math.pow(startPoint.y - endPoint.y, 2));
-        let offset = self.remapValue(lineLength, 100, 200, 0, 50) * self.sample([1, 1])
+        var offset = self.remapValue(lineLength, 100, 400, 0, 550) * self.sample([1, -1])
+        // get ratio of how vertical the startPoint and endPoint are
+        const verticalRatio = Math.abs(startPoint.y - endPoint.y) / lineLength;
+        // get ratio of how horizontal the startPoint and endPoint are
+        const horizontalRatio = Math.abs(startPoint.x - endPoint.x) / lineLength;
+        // make offset propportional to the vertical and horizontal ratio
+        
+
+        offset = (1 - Math.max(horizontalRatio, verticalRatio)) + ((self.remapValue(lineLength,100,400,0,0.2)) * offset);
+
         let controlPoint = self.getOffsetPoint(midPoint, endPoint, offset)
         const path = [
           ['M', startPoint.x, startPoint.y],
@@ -541,13 +529,52 @@ export default {
         const midPoint = shape.getPoint(0.5);
         const endPoint = shape.getPoint(0.9);
         const length = shape.cfg.totalLength
-
+        
         const p = self.sample(['+', '–', '-', 's', 'p', 'o', 'S', 'P', 'O'])
         
         self.polarities.push({id: cfg.id, polarity: self.p_leg[p]})
 
         let radian = Math.atan((startPoint.y - endPoint.y) / ((startPoint.x - endPoint.x)));
+        let groups = self.graph.findById(cfg.source)
+        
+        // get current node
+        
+        // filter by node id and how manby neighbours it has
+        let source_node = self.graph.getNodes().filter(node =>
+          node.get('model').id === cfg.source
+          )[0]
+
+        let target_node = self.graph.getNodes().filter(node =>
+          node.get('model').id === cfg.target
+        )[0]
+
+        // console.log(self.graph.getNeighbors(source_node).length)
+        // console.log(self.graph.getNeighbors(target_node).length)
+    
+
+        // get number of edges connected to this node
+        // let numEdges = self.graph.getEdges().filter(edge => edge.get('model').source === cfg.source).length
+        
         if (length < 100) {
+          
+          try{
+            if (self.graph.getNeighbors(source_node).length < 4 ){
+              try{
+                // source_node.getContainer().attr({
+                //   opacity: 0
+                // })
+                target_node.getContainer().attr({
+                  opacity: 0
+                })
+              } catch(e){
+
+              }
+            }
+          } catch(e){
+            // console.log(e)
+          }
+                  
+
           // set attribute
           shape.attr({
             stroke: 'transparent',
@@ -561,6 +588,14 @@ export default {
           // this.setState('selected', true);
           
         } else {
+
+          source_node.getContainer().attr({
+            opacity: 1
+          })
+          target_node.getContainer().attr({
+            opacity: 1
+          })
+
 
           if (self.showBboxes) {
             // add new group
@@ -944,8 +979,10 @@ export default {
       this.canvasHeight = this.csize
       this.counter +=1
       this.currentbboxes = []
-      let g = this.generateRandomGraphs(1)
-      let p = this.styleGraph(g[0])
+      let g = this.generateRandomGraphs({n: 10, networkx: true})
+      // this.graphtype = 
+      // console.log(g)
+      let p = this.styleGraph(g[Math.random()*g.length|0])
       this.drawGraph(p, this.causalLoopStyle(), this.counter)
       
       // const cv = this.$refs.canvas.getElementsByTagName('canvas')[0]
@@ -1009,7 +1046,7 @@ export default {
             // symbol: Math.random() > 0.95 ? true : false,
             style: {
               ...cls.defaultEdge.style,
-              lineWidth: Math.random() > 0.9 ? this.getRandom(2, 5) : this.getRandom(1, 2),
+              lineWidth:this.getRandom(1, 8),
               stroke: Math.random() > 0.9 ? randomColor({ luminosity: 'bright' }) : cls.defaultEdge.style.stroke, 
               lineDash: Math.random() > 0.1 ? null : [5,5],
 
@@ -1038,7 +1075,7 @@ export default {
           fitView: true,
           fitViewPadding: 20,
           // gpuEnabled: true,
-          // preventOverlap: {padding: 20},
+          preventOverlap: {padding: 20},
           modes: {
             default: ['drag-canvas'  , 'zoom-canvas', 'drag-node'],
           },
@@ -1273,13 +1310,14 @@ export default {
           style: {
             stroke: edgeStroke,
             lineWidth: this.sample([1,2,3]),
-            startArrow: Math.random() >0.9 ? {
-              fillOpacity: Math.random() > 0.9 ? 0.5 : 1,
-              fill: edgeStroke,
-              path: this.sample([
-                G6.Arrow.circle(this.getRandom(2, 6), 0)
-              ])
-            } : false,
+            startArrow: false,
+            // Math.random() >0.9 ? {
+            //   fillOpacity: Math.random() > 0.9 ? 0.5 : 1,
+            //   fill: edgeStroke,
+            //   // path: this.sample([
+            //   //   G6.Arrow.circle(this.getRandom(2, 6), 0)
+            //   // ])
+            // } : false,
             // lineJoin: 'round',
             // lineCap: 'round',
           },

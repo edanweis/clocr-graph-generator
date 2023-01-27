@@ -1,0 +1,1 @@
+{"directed": false, "multigraph": false, "graph": {"name": "random_k_out_graph"}, "nodes": [{"id": 0}, {"id": 5}, {"id": 6}], "links": [{"source": 0, "target": 6}, {"source": 0, "target": 5}, {"source": 6, "target": 6}]}

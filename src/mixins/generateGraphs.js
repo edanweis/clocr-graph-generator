@@ -12,7 +12,10 @@ import { faker } from '@faker-js/faker';
 import deezer_nodes from '@/assets/deezer_target.csv';
 import deezer_edges from '@/assets/deezer_edges.json' assert { type: "json" };
 
+// import a sequence of json objects in @/assets/graphs/ using vite glob imports
+const networkx_graphs = import.meta.glob('@/assets/graphs/*.json', { as: 'json', eager: true })
 
+// console.log(networkx_graphs)
 const generate = {
         data() {
             return {
@@ -20,9 +23,11 @@ const generate = {
                 max_nodes: 10,
                 min_edges: 10,
                 max_edges: 100,
+                networkx_graphs: null,
                 graphTypes: [
-                    { name: 'path', func: path },
-                    { name: 'ladder', func: ladder },
+                    // { name: 'path', func: path },
+                    // { name: 'ladder', func: ladder },
+                    { name: 'networkx'},
                     // { name: 'complete', func: complete },
                     // { name: 'erdosRenyi', func: erdosRenyi },
                     // { name: 'caveman', func: caveman },
@@ -35,6 +40,9 @@ const generate = {
                     deezer: { edges: deezer_edges, nodes: deezer_nodes },
                 }
             }
+        },
+        created(){
+            
         },
         methods: {
             getSocialGraph(name) {
@@ -54,13 +62,14 @@ const generate = {
                 max = Math.floor(max);
                 return Math.floor(Math.random() * (max - min)) + min;
             },
-            generateRandomGraphs(n, sparsematrix) {
-                var self = this
+            generateRandomGraphs(options) {
+                const { n, sparsematrix, networkx } = options
+
                 if (sparsematrix == true) {
                     var graph = loadFromObject(mtxObject);
 
                     var e = []
-                    var n = []
+                    n = []
 
                     graph.forEachNode((node) => {
                         n.push({ id: node.id.toString()})
@@ -84,6 +93,31 @@ const generate = {
                     // return [graph]
 
                 }
+
+                if (networkx == true){
+                    let graphs = [];
+                    for (let graph of Object.values(networkx_graphs)) {
+                        // console.log(graph.default.graph.name)
+                        var key = Object.values(networkx_graphs).indexOf(graph)
+
+                        let g = {
+                            nodes: graph.nodes.map(n => { return { key: n.id, label: graph.default.graph.name}}),
+                            edges: graph.links.map(l => {
+                                return {
+                                    source: l.source,
+                                    target: l.target,
+                                    // gnerate random alphanumeric string as key
+                                    key: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+                            }}),
+                            key 
+                        }
+                        // console.log(g)
+                        graphs.push({ ...MultiDirectedGraph.from(g).export(), type: 'networkx'})
+                    }
+                    
+                    return graphs
+                }
+
                 let graphs = []
                 for (let i = 0; i < n; i++) {
                     let graphType = this.graphTypes[Math.floor(Math.random() * this.graphTypes.length)];
@@ -124,7 +158,7 @@ const generate = {
                     // let graph = graphType.func(DirectedGraph, this.getRandom(this.min_nodes, this.max_nodes));
                     // graphs.push({ ...this.styleGraph(g.export()), type: graphType.name })
                     
-                    graphs.push({ ...g.export(), type: graphType.name })
+                    // graphs.push({ ...g.export(), type: graphType.name })
                 }
                 // console.log(graphs)
                 return graphs
