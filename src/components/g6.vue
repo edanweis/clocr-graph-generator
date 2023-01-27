@@ -1129,8 +1129,10 @@ export default {
                 this.pushBBox(re.getBoundingClientRect(), classcat)
               })
               // uncomment to save:
-              // this.graph.downloadImage(`${padded_counter}`, 'image/jpeg', 'white')
-              // this.saveToTextFile(padded_counter)
+              if (this.automation==true){
+                this.graph.downloadImage(`${padded_counter}`, 'image/jpeg', 'white')
+                this.saveToTextFile(padded_counter)
+              }
 
             }, 10);
             

@@ -1,7 +1,15 @@
 const puppeteer = require("puppeteer-extra")
 const UserPreferencesPlugin = require("puppeteer-extra-plugin-user-preferences");
-const downloadImageDirectoryPath = '/media/edanweis/NewWindows/clocr';
+const downloadImageDirectoryPath = '/home/edanweis/clocr-graph-generator/clocr-graph-generator/automate_test/';
 const { executablePath } = require('puppeteer')
+
+
+
+// REMEMBER
+// for file in ./*.jpeg; do mv "$file" "${file/jpeg/}"; done
+
+
+
 
 puppeteer.use(
     UserPreferencesPlugin({
@@ -37,11 +45,11 @@ puppeteer.use(
     });
     const page = await browser.newPage();
 
-    await page.goto('http://localhost:5173');
+    await page.goto('http://localhost:5173?automation=true');
     await page.waitForTimeout(5000)
 
     // click 10 times
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 2; i++) {
         await page.click('#random')
         await page.waitForTimeout(700)
         // await page.on('response', (response) => { console.log(response, response._url) })
