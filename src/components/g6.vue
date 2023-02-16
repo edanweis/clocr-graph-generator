@@ -1,6 +1,9 @@
 <!--  -->
 <template>
   <main class="main" ref="main">
+    <div v-if="currentbboxes && automation" style="font-size:0px;position:absolute;" ref="textToSave" id="textToSave">
+        {{ currentbboxes.join('\n') }}
+    </div>
     <!-- <div style="z-index:4; position: absolute;left:10px;top:10px;"></div>   -->
     <div v-if="(showDOMBboxes && graph)">
 
@@ -890,9 +893,9 @@ export default {
 
     saveToTextFile(padded_counter){
       // write bboxes to a csv file
-      var blob = new Blob([this.currentbboxes.join('\n')], { type: "text/plain;charset=utf-8" });
-      
-      saveAs(blob, `${padded_counter}.txt`);
+      // var blob = new Blob([this.currentbboxes.join('\n')], { type: "text/plain;charset=utf-8" });
+      // this.$refs.textToSave.textContent = this.currentbboxes.join('\n');
+      // saveAs(blob, `${padded_counter}.txt`);
 
     },  
 
@@ -1130,8 +1133,9 @@ export default {
               })
               // uncomment to save:
               if (this.automation==true){
-                this.graph.downloadImage(`${padded_counter}`, 'image/jpeg', 'white')
-                this.saveToTextFile(padded_counter)
+                // commenting 
+                // this.graph.downloadImage(`${padded_counter}`, 'image/jpeg', 'white')
+                // this.saveToTextFile(padded_counter)
               }
 
             }, 10);
