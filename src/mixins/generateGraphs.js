@@ -63,13 +63,13 @@ const generate = {
                 return Math.floor(Math.random() * (max - min)) + min;
             },
             generateRandomGraphs(options) {
-                const { n, sparsematrix, networkx } = options
+                var { n, sparsematrix, networkx } = options
 
                 if (sparsematrix == true) {
                     var graph = loadFromObject(mtxObject);
 
                     var e = []
-                    n = []
+                    // n = []
 
                     graph.forEachNode((node) => {
                         n.push({ id: node.id.toString()})
